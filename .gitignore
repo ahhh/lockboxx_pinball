@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# editors / IDEs
+.vscode/
+.idea/
+*.swp
+
+# node (tests run on plain node, but just in case)
+node_modules/
+
+# scratch / temp
+*.log
+*.tmp
