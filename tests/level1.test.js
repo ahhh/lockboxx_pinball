@@ -160,3 +160,13 @@ PB.startLevel(); PB.game.balls=99; PB.game.ballSaveT=0;
   assert(PB.letters.every(l=>l.got), "all 8 LOCKBOXX letters collected");
   assert(PB.game.score>=s0+140000, "LOCKBOXX completion bonus awarded");
 }
+
+/* --- mobile tap-flip: fires the flipper, then auto-releases --- */
+PB.startLevel();
+PB.tapFlip(-1);
+assert(PB.flippers[0].pressed===true, "tap fires the left flipper");
+sim(0.5);
+assert(PB.flippers[0].pressed===false, "tap auto-releases so it can be tapped again");
+PB.tapFlip(-1);
+assert(PB.flippers[0].pressed===true, "immediate re-tap fires again");
+sim(0.5);

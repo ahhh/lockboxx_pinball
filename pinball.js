@@ -477,23 +477,38 @@ window.addEventListener("keyup", e=>{
   if(k==="ArrowRight"||k==="KeyM"||k==="KeyL") press(1,false);
   if((k==="Space"||k==="ArrowDown") && plunger.charging){ plunger.charging=false; launch(); }
 });
+/* on-screen flipper buttons (mobile): tap = one full flip that auto-releases,
+   so the same button can be tapped repeatedly with no stuck state */
+const isTouch = (typeof navigator!=="undefined" && navigator.maxTouchPoints>0) ||
+                (typeof window!=="undefined" && "ontouchstart" in window);
+const BTNS = [
+  {side:-1, x:56,  y:TH-64, r:36},
+  {side: 1, x:424, y:TH-64, r:36},
+];
+const btnT = {"-1":0, "1":0};
+function tapFlip(side){
+  press(side, true);
+  btnT[side] = 0.28;
+}
 const touches = {};
 cv.addEventListener("pointerdown", e=>{
   audio(); startMusic(); e.preventDefault();
   if(game.mode!=="play"){ advanceScreen(); return; }
-  const x = e.clientX - cv.getBoundingClientRect().left;
+  const rect = cv.getBoundingClientRect();
+  const sc = TW / (rect.width || TW);
+  const x = (e.clientX-rect.left)*sc, y = (e.clientY-rect.top)*sc;
+  for(const b of BTNS){
+    if(Math.hypot(x-b.x, y-b.y) <= b.r+10){ tapFlip(b.side); return; }
+  }
   if(armedBall()){ plunger.charging = true; touches[e.pointerId]="plunge"; return; }
-  const side = x < cv.clientWidth/2 ? -1 : 1;
-  touches[e.pointerId] = side; press(side,true);
 });
 cv.addEventListener("pointerup", e=>{
   const t = touches[e.pointerId]; delete touches[e.pointerId];
   if(t==="plunge"){ if(plunger.charging){ plunger.charging=false; launch(); } }
-  else if(t) press(t,false);
 });
 cv.addEventListener("pointercancel", e=>{
   const t = touches[e.pointerId]; delete touches[e.pointerId];
-  if(t==="plunge") plunger.charging=false; else if(t) press(t,false);
+  if(t==="plunge") plunger.charging=false;
 });
 
 /* ============================================================
@@ -589,6 +604,13 @@ function physics(dt){
   for(const sl of SLINGS) if(sl.flash>0) sl.flash -= dt;
   for(const s of SEGS){ if(s.cdT>0) s.cdT -= dt; if(s.flash>0) s.flash -= dt; }
   for(const bp of BUMPERS) if(bp.flash>0) bp.flash -= dt;
+  /* tap-flip auto-release */
+  for(const s of [-1,1]){
+    if(btnT[s]>0){
+      btnT[s] -= dt;
+      if(btnT[s]<=0) press(s,false);
+    }
+  }
   /* cutscene slides auto-advance: 1 second per slide */
   if(game.mode==="cutscene" && slides){
     slides.t += dt;
@@ -816,6 +838,25 @@ function drawHUD(t){
   }
   cx.fillStyle="rgba(154,164,192,0.55)"; cx.font="10px Courier New"; cx.textAlign="center";
   cx.fillText("Z / ←  LEFT    M / →  RIGHT    SPACE  PLUNGER    S  MUSIC    R  RESTART", 224, TH-8);
+  /* mobile flipper buttons */
+  if(isTouch && game.mode==="play"){
+    for(const b of BTNS){
+      const active = btnT[b.side]>0;
+      cx.globalAlpha = active ? 0.95 : 0.45;
+      cx.fillStyle = active ? "rgba(255,210,74,0.35)" : "rgba(30,36,54,0.7)";
+      cx.beginPath(); cx.arc(b.x,b.y,b.r,0,7); cx.fill();
+      cx.strokeStyle = active ? GOLD : "#59637f"; cx.lineWidth=3;
+      cx.beginPath(); cx.arc(b.x,b.y,b.r,0,7); cx.stroke();
+      /* flip arrow */
+      cx.strokeStyle = active ? "#ffffff" : GOLD; cx.lineWidth=5; cx.lineCap="round";
+      cx.beginPath();
+      cx.moveTo(b.x - b.side*14, b.y+10);
+      cx.lineTo(b.x + b.side*10, b.y+2);
+      cx.lineTo(b.x + b.side*2,  b.y-14);
+      cx.stroke();
+      cx.globalAlpha = 1;
+    }
+  }
   for(const m of msgs){
     const a = Math.min(1, m.life/0.4, (m.max-m.life)/0.2+1);
     cx.globalAlpha=Math.max(0,Math.min(1,a));
@@ -926,7 +967,7 @@ return {
   balls, game, plunger, rails:RAILS, segs:SEGS, bumpers:BUMPERS, flippers:FLIPPERS, letters:LETTERS,
   addScore, showMsg, burst,
   serve, launch, addBall, removeBall, armedBall,
-  startLevel, levelComplete, gameOver, advanceScreen,
+  startLevel, levelComplete, gameOver, advanceScreen, tapFlip,
   physics, init, store, ctx:cx,
 };
 })();
