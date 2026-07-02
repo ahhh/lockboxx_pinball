@@ -1,0 +1,90 @@
+Pinball stage design
+
+Level 1
+Lockboxx Themed Pinball Level
+Features many locks and triggers that must be hit to unlock new mechanisms and passages\
+Moving Security Gates
+After certain locks open:
+bridges extend
+walls collapse
+gates slide away
+ramps appear
+orbit lanes open
+Watching the table physically transform is very satisfying.
+New platforms will move into place
+Essentially there should be 3 readily available triggers, that unlock 3 more difficult door or wall shots, each of these shots will part of a bridge in the center, that when fully constructed takes the player to the next level. This level should maybe feature an extra bumper on the right side. 
+Captive Ball
+Place a captive ball inside a giant padlock.
+Repeated hits:
+loosen chains
+award jackpots
+eventually (3 hits) break the ball out giving the player an extra ball. This ball doesn't transfer to the next stage. 
+
+Level 2
+Subway themed Pinball Level 
+This level should have an upper and a lower level deck. The players actually start on the upper level deck w/ two flippers and have to send it through a series of tubes into parts of the lower level deck, where there are additional flippers, then can use the tube system to unlock a golden tube, which takes them to the next level. 
+
+Subway Loops
+Fast tube shots send the ball around the map.
+Chain stations together for huge combo bonuses.
+
+Train Timing
+Occasionally trains cross tracks.
+If timed correctly:
+Ball boards moving train.
+Carries to lower area.
+Mistime it:
+Ball bounces away.
+Creates exciting timing gameplay.
+
+On the wall Ball Locks
+Physically represented by subway cars.
+Each full train car locks a ball.
+Three trains full:
+Rush Hour Multiball.
+
+Subway Spinner
+Rotating turnstile.
+Every spin increases:
+Fare Multiplier.
+
+Level 3
+Haunted Castle Pinball Level
+The players must destroy 4 core foundations to bring the castle down. As they hit each one, monsters and obsticles will appear to stop them. When the castle finally falls, they are on the final level, where they are fighting the dragon. 
+
+Foundation One
+Castle shakes.
+Skeleton bumpers awaken.
+Pop bumpers now have animated skulls.
+
+Foundation Two
+Ghost ramp portals appear.
+The ball travels through haunted portals.
+Can come out of 1-3 random outpipe that shoots / drops the ball from above
+
+Foundation Three
+Gargoyles begin "attacking."
+Animated obstacles block ramps
+Occasionally open and close.
+
+Foundation Four
+Entire castle begins collapsing.
+
+Level 4
+Final Dragon Fight level 
+
+A giant dragon appears.
+
+You must:
+
+hit left wing
+hit right wing
+shoot mouth
+expose weak point
+multiball starts
+defeat boss
+
+Hit his treasure that appears after you defeate him
+
+
+Final cut scene

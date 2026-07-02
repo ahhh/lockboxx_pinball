@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>LOCKBOXX Pinball</title>
+<style>
+  html,body{margin:0;padding:0;background:#07080d;height:100%;overflow:hidden;font-family:"Courier New",monospace}
+  canvas{display:block;margin:0 auto;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+/* LOCKBOXX Pinball — title / attract screen.
+   Starting a game wipes the in-progress run (score+balls in
+   localStorage) and jumps to level1.html. High score persists. */
+const TW=480, TH=880;
+const cv=document.getElementById("c"), cx=cv.getContext("2d");
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const s=Math.min(window.innerWidth/TW, window.innerHeight/TH);
+  cv.width=Math.round(TW*s*dpr); cv.height=Math.round(TH*s*dpr);
+  cv.style.width=Math.round(TW*s)+"px"; cv.style.height=Math.round(TH*s)+"px";
+  cx.setTransform(s*dpr,0,0,s*dpr,0,0);
+}
+window.addEventListener("resize",resize); resize();
+
+function hi(){ try{ return +localStorage.getItem("lockboxx.hi")||0; }catch(e){ return 0; } }
+function startAt(page){
+  try{ localStorage.removeItem("lockboxx.game"); }catch(e){}
+  location.href = page;
+}
+window.addEventListener("keydown", e=>{
+  if(e.code==="Space"||e.code==="Enter") startAt("level1.html");
+  if(e.code==="Digit1") startAt("level1.html");
+  if(e.code==="Digit2") startAt("level2.html");
+  if(e.code==="Digit3") startAt("level3.html");
+  if(e.code==="Digit4") startAt("level4.html");
+});
+cv.addEventListener("pointerdown", ()=>startAt("level1.html"));
+
+function roundRect(x,y,w,h,r){
+  cx.beginPath();
+  cx.moveTo(x+r,y); cx.arcTo(x+w,y,x+w,y+h,r); cx.arcTo(x+w,y+h,x,y+h,r);
+  cx.arcTo(x,y+h,x,y,r); cx.arcTo(x,y,x+w,y,r); cx.closePath();
+}
+function padlock(x,y,s,col){
+  cx.strokeStyle=col; cx.fillStyle=col; cx.lineWidth=s*0.22;
+  cx.beginPath(); cx.arc(x,y-s*0.42,s*0.42,Math.PI,Math.PI*2); cx.stroke();
+  roundRect(x-s*0.55,y-s*0.42+s*0.28,s*1.1,s*0.9,s*0.15); cx.fill();
+}
+const GOLD="#ffd24a", CYAN="#7de8ff";
+const LEVELS=[["1","THE VAULT"],["2","THE SUBWAY"],["3","HAUNTED CASTLE"],["4","DRAGON'S LAIR"]];
+function frame(ts){
+  const t=ts/1000;
+  const bg=cx.createLinearGradient(0,0,0,TH);
+  bg.addColorStop(0,"#141826"); bg.addColorStop(0.5,"#10131f"); bg.addColorStop(1,"#0a0c14");
+  cx.fillStyle=bg; cx.fillRect(0,0,TW,TH);
+  cx.fillStyle="rgba(255,255,255,0.03)";
+  for(let y=60;y<TH;y+=64) for(let x=40;x<TW;x+=64){ cx.beginPath(); cx.arc(x,y,2.5,0,7); cx.fill(); }
+
+  cx.textAlign="center";
+  cx.shadowColor=GOLD; cx.shadowBlur=18+8*Math.sin(t*2);
+  cx.fillStyle=GOLD; cx.font="bold 52px Courier New";
+  cx.fillText("LOCKBOXX", 240, 180);
+  cx.shadowBlur=0;
+  cx.fillStyle=CYAN; cx.font="bold 24px Courier New";
+  cx.fillText("P  I  N  B  A  L  L", 240, 220);
+
+  cx.save();
+  cx.translate(240, 330); cx.rotate(Math.sin(t*1.2)*0.06);
+  padlock(0, 20, 60, GOLD);
+  cx.restore();
+
+  cx.fillStyle="#9aa4c0"; cx.font="bold 13px Courier New";
+  cx.fillText("A FOUR-TABLE HEIST", 240, 448);
+  for(let i=0;i<4;i++){
+    const y=490+i*30;
+    cx.fillStyle="#59637f"; cx.font="12px Courier New";
+    cx.fillText("LEVEL "+LEVELS[i][0]+"  —  "+LEVELS[i][1], 240, y);
+  }
+
+  cx.fillStyle=GOLD; cx.font="bold 16px Courier New";
+  cx.fillText("HIGH SCORE  "+hi().toLocaleString(), 240, 650);
+
+  cx.fillStyle=`rgba(255,210,74,${0.5+0.5*Math.sin(t*4)})`;
+  cx.font="bold 18px Courier New";
+  cx.fillText("PRESS SPACE OR TAP TO START", 240, 720);
+  cx.fillStyle="#59637f"; cx.font="11px Courier New";
+  cx.fillText("(press 1-4 to jump to a level)", 240, 750);
+  cx.fillText("Z / ← left flipper    M / → right flipper    SPACE plunger", 240, 800);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

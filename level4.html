@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>LOCKBOXX Pinball — Level 4: Dragon's Lair</title>
+<style>
+  html,body{margin:0;padding:0;background:#07080d;height:100%;overflow:hidden;font-family:"Courier New",monospace}
+  canvas{display:block;margin:0 auto;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="pinball.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   LEVEL 4 — DRAGON'S LAIR (final)
+   Break the LEFT and RIGHT wings (3 hits each) -> the mouth
+   opens: shoot it to be swallowed -> the weak point is exposed
+   and MULTIBALL starts -> smash the heart 3x to defeat the
+   dragon -> claim the treasure -> final cutscene.
+   ============================================================ */
+const {V, seg, colors} = PB;
+const {GOLD, CYAN, RED, PURPLE} = colors;
+const cx = PB.ctx;
+
+const L = {
+  phase:0,             // 0 wings, 1 mouth, 2 heart(multiball), 3 treasure
+  wingHits:[0,0],      // left, right (3 each)
+  swallowT:0,
+  heartHits:0, heartCd:0,
+  breathT:0, breathing:false,
+  doneT:0,
+};
+
+/* ---------- shell + furniture ---------- */
+PB.standardShell();
+PB.addBumper( 80,330,18,{col:"#ff8a4a"});
+PB.addBumper(400,330,18,{col:"#ff8a4a"});
+PB.addTarget( 20,420,  20,460, {score:5000, label:"5K"});
+PB.addTarget(428,420, 428,460, {score:5000, label:"5K"});
+
+/* ---------- dragon ---------- */
+const BODY = PB.addBumper(240,190,42,{col:RED,score:250});
+const HEAD = PB.addBumper(240,248,16,{col:RED,score:250});
+const HEART= PB.addBumper(240,304,14,{col:PURPLE,score:1000,onHit:()=>hitHeart()});
+const MOUTH={x:240,y:270,r:13};
+
+/* wing targets (3 hits each while phase 0) */
+function wingSeg(x1,y1,x2,y2,i){
+  seg(x1,y1,x2,y2,{nodraw:true, e:0.6,
+    enabled:()=>L.phase===0 && L.wingHits[i]<3,
+    onHit:(s,b)=>hitWing(i,b)});
+}
+wingSeg(150,212, 196,182, 0);
+wingSeg(284,182, 330,212, 1);
+
+/* ---------- rules ---------- */
+function hitWing(i,b){
+  if(L.wingCd>0) return;
+  L.wingCd=0.4;
+  L.wingHits[i]++;
+  PB.addScore(15000);
+  PB.burst(b.x,b.y,RED,14,280);
+  PB.game.shake=Math.max(PB.game.shake,6);
+  PB.sfx.thud();
+  const name=i===0?"LEFT":"RIGHT";
+  if(L.wingHits[i]<3) PB.showMsg(name+" WING "+L.wingHits[i]+"/3","KEEP HITTING IT!",1.6);
+  else {
+    PB.sfx.roar();
+    PB.showMsg(name+" WING BROKEN!", L.wingHits[0]>=3&&L.wingHits[1]>=3 ? "THE MOUTH OPENS — SHOOT IT!" : "NOW THE OTHER WING!", 2.4);
+    if(L.wingHits[0]>=3 && L.wingHits[1]>=3){
+      L.phase=1;
+      HEAD.enabled=false;      // mouth shot is open
+    }
+  }
+}
+function hitHeart(){
+  if(L.phase!==2 || L.heartCd>0) return;
+  L.heartCd=0.5;
+  L.heartHits++;
+  PB.addScore(75000);
+  PB.game.shake=10;
+  PB.burst(240,304,PURPLE,20,320);
+  if(L.heartHits<3){ PB.sfx.jackpot(); PB.showMsg("WEAK POINT HIT "+L.heartHits+"/3","JACKPOT! 75,000",2); }
+  else {
+    L.phase=3;
+    HEART.enabled=false;
+    L.treasureT=2.5;              // short cinematic: dragon slumps, hoard spills, then WIN
+    PB.sfx.roar();
+    PB.game.shake=22;
+    PB.addScore(200000);
+    PB.burst(240,200,RED,50,460);
+    PB.showMsg("DRAGON DEFEATED!","THE HOARD IS YOURS!",2.5);
+  }
+}
+
+PB.init({
+  level:4, music:"music/level4.mp3", name:"DRAGON'S LAIR", next:null,
+  letters:[[50,150],[240,60],[415,150],[60,430],[400,480],[150,560],[330,560],[240,660]],
+  bg:["#1a0e10","#120a0e","#0a0608"],
+  intro:["LEVEL 4: DRAGON'S LAIR","BREAK BOTH WINGS — 3 HITS EACH"],
+  reset(){
+    L.phase=0; L.wingHits=[0,0]; L.wingCd=0;
+    L.swallowT=0; L.heartHits=0; L.heartCd=0;
+    L.breathT=0; L.breathing=false; L.doneT=0; L.treasureT=0;
+    HEAD.enabled=true; HEART.enabled=false;
+  },
+  tick(dt){
+    if(L.wingCd>0) L.wingCd-=dt;
+    if(L.heartCd>0) L.heartCd-=dt;
+  },
+  ballStep(b){
+    /* mouth capture (phase 1) */
+    if(L.phase===1 && Math.hypot(b.x-MOUTH.x,b.y-MOUTH.y)<MOUTH.r+6){
+      L.phase=1.5; L.swallowT=1.2;
+      PB.addScore(50000);
+      PB.sfx.roar();
+      PB.showMsg("SWALLOWED!","THE WEAK POINT IS EXPOSED...",2);
+      return "remove";
+    }
+    /* fire breath pushes the ball down */
+    if(L.breathing && b.y>280 && b.y<420 && Math.abs(b.x-240)<20+(b.y-280)*0.4){
+      b.vy += 900*(1/240);
+      b.vx += (b.x-240)*2*(1/240);
+    }
+  },
+  update(dt){
+    /* swallow -> spit out + MULTIBALL */
+    if(L.swallowT>0){
+      L.swallowT-=dt;
+      if(L.swallowT<=0){
+        L.phase=2;
+        HEART.enabled=true;
+        PB.addBall(240,340,20,420);
+        PB.addBall(200,350,-140,-60);
+        PB.addBall(280,350,140,-60);
+        PB.sfx.fanfare();
+        PB.game.shake=10;
+        PB.showMsg("MULTIBALL!","SMASH THE GLOWING HEART 3X",3);
+      }
+    }
+    /* defeat cinematic -> win screen */
+    if(L.phase===3 && L.treasureT>0){
+      L.treasureT-=dt;
+      if(Math.random()<0.3) PB.burst(240+(Math.random()-0.5)*60, 300, GOLD, 3, 200);
+      if(L.treasureT<=0){
+        PB.addScore(500000);
+        PB.levelComplete();       // no next level -> finale win screen
+      }
+    }
+    /* fire breath cycle during the fight */
+    if(L.phase<3 && L.phase>=0){
+      L.breathT+=dt;
+      const c=L.breathT%6;
+      L.breathing = L.phase!==1.5 && c>4.2 && c<5.6;
+      if(L.breathing && Math.random()<0.8)
+        PB.burst(240+(Math.random()-0.5)*16, 290+Math.random()*40, Math.random()<0.5?"#ff8a4a":RED, 2, 120);
+    } else L.breathing=false;
+    if(PB.game.mode==="done") L.doneT+=dt;
+  },
+  drawUnder(t){
+    const dead=L.phase>=3;
+    const flap=dead?0:Math.sin(t*3)*14;
+    cx.save();
+    if(dead){ cx.globalAlpha=0.5; cx.translate(0,18); }
+    /* wings */
+    for(const i of [0,1]){
+      const sgn=i===0?-1:1;
+      const broken=L.wingHits[i]>=3;
+      const wx=240+sgn*38, tipX=240+sgn*(broken?92:118), tipY=broken?236:150-flap;
+      cx.fillStyle=broken?"#5a2430":"#8a2f3e";
+      cx.beginPath();
+      cx.moveTo(wx,170);
+      cx.quadraticCurveTo(240+sgn*80, 120-flap, tipX, tipY);
+      cx.quadraticCurveTo(240+sgn*95, 200, wx, 215);
+      cx.closePath(); cx.fill();
+      cx.strokeStyle=broken?"#3a1820":"#c04a5a"; cx.lineWidth=2; cx.stroke();
+      if(!broken && L.phase===0){
+        cx.fillStyle=`rgba(255,210,74,${0.5+0.4*Math.sin(t*6+i)})`;
+        cx.font="bold 10px Courier New"; cx.textAlign="center";
+        cx.fillText(3-L.wingHits[i], 240+sgn*80, 185);
+      }
+    }
+    /* neck + horns */
+    cx.fillStyle="#7a2a36";
+    cx.fillRect(228,210,24,36);
+    cx.beginPath(); cx.moveTo(226,240); cx.lineTo(214,222); cx.lineTo(230,232); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(254,240); cx.lineTo(266,222); cx.lineTo(250,232); cx.closePath(); cx.fill();
+    /* eyes */
+    cx.fillStyle=dead?"#3a3448":(L.breathing?"#ffd24a":"#ff5a3a");
+    cx.beginPath(); cx.arc(232,244,3.5,0,7); cx.fill();
+    cx.beginPath(); cx.arc(248,244,3.5,0,7); cx.fill();
+    /* mouth */
+    if(L.phase===1){
+      const mg=cx.createRadialGradient(MOUTH.x,MOUTH.y,2,MOUTH.x,MOUTH.y,22);
+      mg.addColorStop(0,"#ffd24a"); mg.addColorStop(0.5,"#ff5a3a"); mg.addColorStop(1,"rgba(255,90,58,0)");
+      cx.globalAlpha=0.7+0.3*Math.sin(t*8);
+      cx.fillStyle=mg;
+      cx.beginPath(); cx.arc(MOUTH.x,MOUTH.y,22,0,7); cx.fill();
+      cx.globalAlpha=dead?0.5:1;
+      cx.fillStyle="#2a0a10";
+      cx.beginPath(); cx.arc(MOUTH.x,MOUTH.y,11,0,7); cx.fill();
+      cx.fillStyle="#fff";
+      for(let k=0;k<5;k++){
+        const a=Math.PI*0.15+k*Math.PI*0.17;
+        cx.beginPath();
+        cx.moveTo(MOUTH.x+Math.cos(a)*11, MOUTH.y+Math.sin(a)*11);
+        cx.lineTo(MOUTH.x+Math.cos(a)*11-2, MOUTH.y+Math.sin(a)*11-5);
+        cx.lineTo(MOUTH.x+Math.cos(a)*11+2, MOUTH.y+Math.sin(a)*11-5);
+        cx.closePath(); cx.fill();
+      }
+    }
+    /* fire breath */
+    if(L.breathing){
+      const fg=cx.createLinearGradient(0,280,0,420);
+      fg.addColorStop(0,"rgba(255,210,74,0.5)"); fg.addColorStop(1,"rgba(255,90,58,0)");
+      cx.fillStyle=fg;
+      cx.beginPath();
+      cx.moveTo(228,280); cx.lineTo(240-76,420); cx.lineTo(240+76,420); cx.lineTo(252,280);
+      cx.closePath(); cx.fill();
+    }
+    cx.restore();
+    /* heart / treasure labels */
+    if(L.phase===2){
+      cx.fillStyle=`rgba(176,125,255,${0.5+0.4*Math.sin(t*7)})`;
+      cx.font="bold 9px Courier New"; cx.textAlign="center";
+      cx.fillText("WEAK POINT", 240, 336);
+    }
+    if(L.phase===3){
+      cx.save();
+      cx.translate(240,310); cx.rotate(Math.sin(t*4)*0.08);
+      cx.fillStyle="#8a5a10"; PB.roundRect(-16,-10,32,20,3); cx.fill();
+      cx.fillStyle=GOLD; PB.roundRect(-16,-10,32,8,3); cx.fill();
+      cx.fillStyle="#fff"; cx.fillRect(-2,-6,4,10);
+      cx.restore();
+      if(Math.random()<0.2) PB.burst(240+(Math.random()-0.5)*30, 305, GOLD, 2, 120);
+    }
+  },
+  drawHUD(t){
+    const steps=["WINGS","MOUTH","HEART","WIN"];
+    for(let i=0;i<4;i++){
+      const on = L.phase>=i+ (i===0?1:0) || (i===0&&L.phase>=1) ;
+      cx.fillStyle = L.phase>i ? "#2ed579" : (Math.floor(L.phase)===i ? GOLD : "#333b52");
+      cx.font="bold 8px Courier New"; cx.textAlign="left";
+      cx.fillText(steps[i], 252+i*38, 20);
+    }
+  },
+  wonStats(){ return []; },
+  drawFinale(t){
+    L.doneT+=0;
+    const dt2=L.doneT;
+    cx.textAlign="center";
+    /* falling dragon silhouette */
+    cx.save();
+    cx.translate(240, 200+Math.min(1,dt2/4)*80);
+    cx.rotate(Math.min(1,dt2/4)*0.5);
+    cx.globalAlpha=Math.max(0,0.8-dt2*0.12);
+    cx.fillStyle="#5a2430";
+    cx.beginPath(); cx.arc(0,0,40,0,7); cx.fill();
+    cx.beginPath(); cx.moveTo(-30,-10); cx.lineTo(-90,-40); cx.lineTo(-40,20); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(30,-10); cx.lineTo(90,-40); cx.lineTo(40,20); cx.closePath(); cx.fill();
+    cx.restore();
+    cx.globalAlpha=1;
+    cx.fillStyle=GOLD; cx.font="bold 30px Courier New";
+    cx.fillText("THE DRAGON HAS FALLEN", 240, 340);
+    cx.fillStyle=CYAN; cx.font="bold 16px Courier New";
+    cx.fillText("THE LOCKBOXX TREASURE IS YOURS", 240, 380);
+    cx.fillStyle="#fff"; cx.font="bold 20px Courier New";
+    cx.fillText("FINAL SCORE  "+PB.game.score.toLocaleString(), 240, 450);
+    cx.fillStyle="#9aa4c0"; cx.font="13px Courier New";
+    cx.fillText("HIGH SCORE  "+PB.store.hi().toLocaleString(), 240, 480);
+    cx.fillStyle="#59637f"; cx.font="12px Courier New";
+    cx.fillText("Locks picked. Trains caught. Castles crashed.", 240, 540);
+    cx.fillText("Dragons slain. Thanks for playing!", 240, 560);
+    cx.fillStyle=`rgba(255,210,74,${0.5+0.5*Math.sin(t*4)})`;
+    cx.font="bold 15px Courier New";
+    cx.fillText("PRESS SPACE FOR TITLE", 240, 640);
+    if(Math.random()<0.15) PB.burst(60+Math.random()*360, 700+Math.random()*60, GOLD, 3, 160);
+  },
+});
+</script>
+</body>
+</html>

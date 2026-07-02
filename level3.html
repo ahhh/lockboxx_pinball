@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>LOCKBOXX Pinball — Level 3: Haunted Castle</title>
+<style>
+  html,body{margin:0;padding:0;background:#07080d;height:100%;overflow:hidden;font-family:"Courier New",monospace}
+  canvas{display:block;margin:0 auto;touch-action:none}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script src="pinball.js"></script>
+<script>
+"use strict";
+/* ============================================================
+   LEVEL 3 — HAUNTED CASTLE (the Great Hall, seen from inside)
+   You are INSIDE the castle. Four foundation pillars stand in the
+   four quadrants of the hall — smash the lit one (2 hits each,
+   in order) to bring the castle down. Each one awakens a haunt:
+     F1: skeleton bumpers   F2: ghost portal (random drop)
+     F3: a gargoyle shields the last pillar   F4: full collapse
+   When the ceiling falls, ride into the throne portal -> Level 4.
+   ============================================================ */
+const {V, seg, colors} = PB;
+const {GOLD, CYAN, PURPLE, GREEN} = colors;
+const cx = PB.ctx;
+
+const L = {
+  f:0, fh:0,           // lit pillar index + hits on it
+  collapseT:0, time:0,
+  fCrack:[0,0,0,0],
+  ghosts:[],
+  mageCd:0, mageStun:0, mageHits:0,
+  fireT:4, fireballs:[],
+};
+const fallen = ()=>L.f>=4;
+const gargOpen = ()=>Math.sin(L.time*2.6)>0;
+
+/* ---------- shell + furniture ---------- */
+PB.standardShell();
+const B1=PB.addBumper( 80,140,20), B2=PB.addBumper(150,90,18), B3=PB.addBumper(390,140,20);
+const SKULLS=[B1,B2,B3];
+PB.addTarget( 20,420,  20,460, {score:3000, label:"RIP"});
+PB.addTarget(428,420, 428,460, {score:3000, label:"RIP"});
+
+/* inverse center flippers: hinged together mid-hall, half size, flipping
+   OUTWARD — left button drives the left blade, right button the right */
+const INV_L = PB.addFlipper(240,440, 1, 35); INV_L.ctl=-1; INV_L.r=7;
+const INV_R = PB.addFlipper(240,440,-1, 35); INV_R.ctl= 1; INV_R.r=7;
+
+/* ---------- the Skeleton Mage King (on the throne) ---------- */
+function drawMage(bp,t){
+  const stun=L.mageStun>0;
+  const bob=Math.sin(t*2.4)*2, wob=stun?Math.sin(t*20)*2:0;
+  cx.save();
+  cx.translate(bp.x+wob, bp.y+bob);
+  /* robe */
+  const rg=cx.createLinearGradient(0,-8,0,16);
+  rg.addColorStop(0,"#6a4a9a"); rg.addColorStop(1,"#2c1c4a");
+  cx.fillStyle=rg;
+  cx.beginPath(); cx.moveTo(0,-8); cx.lineTo(-13,16); cx.lineTo(13,16); cx.closePath(); cx.fill();
+  /* staff + orb */
+  cx.strokeStyle="#8a6a3a"; cx.lineWidth=2;
+  cx.beginPath(); cx.moveTo(14,14); cx.lineTo(20,-12); cx.stroke();
+  cx.fillStyle=stun?"#59637f":`rgba(255,138,74,${0.7+0.3*Math.sin(t*7)})`;
+  cx.beginPath(); cx.arc(20,-14,4,0,7); cx.fill();
+  /* skull */
+  cx.fillStyle=bp.flash>0?"#ffffff":"#e8e4f0";
+  cx.beginPath(); cx.arc(0,-13,8,0,7); cx.fill();
+  cx.fillRect(-4,-7,8,4);
+  cx.fillStyle=stun?"#59637f":"#b07dff";
+  cx.fillRect(-5,-15,3,3); cx.fillRect(2,-15,3,3);
+  /* crown */
+  cx.fillStyle=GOLD;
+  cx.beginPath();
+  cx.moveTo(-8,-19); cx.lineTo(-8,-25); cx.lineTo(-4,-21); cx.lineTo(0,-26);
+  cx.lineTo(4,-21); cx.lineTo(8,-25); cx.lineTo(8,-19);
+  cx.closePath(); cx.fill();
+  cx.restore();
+}
+const MAGE = PB.addBumper(240,158,15,{score:1000, col:PURPLE,
+  onHit:()=>hitMage(), draw:(bp,t)=>drawMage(bp,t)});
+function hitMage(){
+  if(L.mageCd>0 || fallen()) return;
+  L.mageCd=2.5; L.mageStun=3; L.mageHits++;
+  PB.addScore(99000);                    // + the 1,000 base = 100,000
+  PB.sfx.jackpot();
+  PB.game.shake=Math.max(PB.game.shake,9);
+  PB.burst(240,158,GOLD,26,360);
+  PB.showMsg("MAGE KING STRUCK!","+100,000",2.2);
+}
+
+/* ---------- foundation pillars: one per quadrant of the hall ---------- */
+function drawPillar(bp,t){
+  const i=bp.pIdx, lit=i===L.f && !fallen();
+  const hot=bp.flash>0;
+  const guard=lit && L.f===3 && !gargOpen();
+  if(lit){ cx.shadowColor=PURPLE; cx.shadowBlur=12+8*Math.sin(t*6); }
+  const g=cx.createRadialGradient(bp.x-5,bp.y-6,3,bp.x,bp.y,bp.r+4);
+  g.addColorStop(0, hot?"#ffffff":(lit?"#9a7ac8":"#7a7690"));
+  g.addColorStop(0.7, lit?"#5a3a8a":"#4c4a66");
+  g.addColorStop(1,"#211f30");
+  cx.fillStyle=g;
+  cx.beginPath(); cx.arc(bp.x,bp.y,bp.r+3,0,7); cx.fill();
+  cx.shadowBlur=0;
+  cx.strokeStyle= lit? PURPLE : "#59637f"; cx.lineWidth=2.5;
+  cx.beginPath(); cx.arc(bp.x,bp.y,bp.r+3,0,7); cx.stroke();
+  cx.strokeStyle="rgba(10,9,18,0.6)"; cx.lineWidth=1.5;
+  cx.beginPath(); cx.arc(bp.x,bp.y,bp.r-4,0,7); cx.stroke();
+  /* cracks */
+  if(L.fCrack[i]>0){
+    cx.strokeStyle="#0a0912"; cx.lineWidth=2;
+    cx.beginPath();
+    cx.moveTo(bp.x-10,bp.y-8); cx.lineTo(bp.x-2,bp.y+2); cx.lineTo(bp.x-8,bp.y+12);
+    cx.moveTo(bp.x+8,bp.y-10); cx.lineTo(bp.x+4,bp.y+4);
+    cx.stroke();
+  }
+  cx.fillStyle= lit? "#e8dcff" : "#9aa4c0";
+  cx.font="bold 10px Courier New"; cx.textAlign="center";
+  cx.fillText(String(i+1), bp.x, bp.y+4);
+  /* gargoyle shield over the guarded pillar */
+  if(guard){
+    cx.fillStyle="#5a5078";
+    cx.beginPath();
+    cx.moveTo(bp.x,bp.y-bp.r-14);
+    cx.lineTo(bp.x-24,bp.y-2); cx.lineTo(bp.x-10,bp.y-4); cx.lineTo(bp.x,bp.y+6);
+    cx.lineTo(bp.x+10,bp.y-4); cx.lineTo(bp.x+24,bp.y-2);
+    cx.closePath(); cx.fill();
+    cx.fillStyle=GOLD;
+    cx.fillRect(bp.x-5,bp.y-bp.r-6,3,3); cx.fillRect(bp.x+2,bp.y-bp.r-6,3,3);
+  }
+}
+const PILLARS=[];
+const P_POS=[[120,240],[360,240],[120,520],[360,520]];   // UL, UR, LL, LR quadrants
+for(let i=0;i<4;i++){
+  const bp=PB.addBumper(P_POS[i][0],P_POS[i][1],17,{
+    score:500, col:PURPLE,
+    onHit:(b)=>hitFoundation(i),
+    draw:(bp,t)=>drawPillar(bp,t),
+  });
+  bp.pIdx=i;
+  PILLARS.push(bp);
+}
+
+/* ---------- ghost portal (opens after F2): random drop from above ---------- */
+const DROPS=[{x:120,y:70,vx:40,vy:120},{x:240,y:84,vx:0,vy:120},{x:360,y:70,vx:-40,vy:120}];
+PB.addRail({
+  pts:[V(60,330),V(30,260),V(40,150),V(90,90),V(160,70)],
+  capture:{x:60,y:330,r:15},
+  enabled:()=>L.f>=2 && !fallen(),
+  exit:()=>DROPS[Math.floor(Math.random()*3)],
+  score:5000, color:"176,125,255",
+  msg:["GHOST PORTAL","WHERE WILL IT DROP?"],
+  onRide:()=>PB.sfx.ghost(),
+});
+
+/* ---------- rules ---------- */
+const F_MSGS=[
+  ["FOUNDATION ONE DOWN!","THE SKELETON BUMPERS AWAKEN"],
+  ["FOUNDATION TWO DOWN!","GHOST PORTALS TEAR OPEN"],
+  ["FOUNDATION THREE DOWN!","A GARGOYLE SHIELDS THE LAST PILLAR"],
+  ["THE CASTLE IS FALLING!","RIDE INTO THE THRONE PORTAL"],
+];
+function hitFoundation(i){
+  if(fallen()) return;
+  if(i!==L.f){
+    PB.sfx.thud();
+    return;
+  }
+  if(L.f===3 && !gargOpen()){
+    PB.sfx.clank();
+    PB.showMsg("BLOCKED!","WAIT FOR THE GARGOYLE TO LIFT",1.4);
+    return;
+  }
+  L.fh++;
+  L.fCrack[i]=L.fh;
+  PB.burst(PILLARS[i].x,PILLARS[i].y,PURPLE,12,260);
+  PB.game.shake=Math.max(PB.game.shake,5);
+  if(L.fh<2){
+    PB.sfx.thud();
+    PB.addScore(10000);
+    PB.showMsg("FOUNDATION "+(i+1)+" CRACKED","ONE MORE HIT!",1.8);
+    return;
+  }
+  L.f++; L.fh=0;
+  PILLARS[i].enabled=false;       // destroyed pillar leaves the room
+  PB.addScore(40000);
+  PB.sfx.jackpot();
+  PB.game.shake=12;
+  PB.showMsg(F_MSGS[i][0], F_MSGS[i][1], 2.8);
+  if(L.f===1){ for(const s of SKULLS){ s.score=500; s.skull=true; } }
+  if(L.f===4){
+    PB.sfx.roar(); PB.game.shake=20;
+    MAGE.enabled=false;           // the mage falls with his castle
+    L.fireballs.length=0;
+  }
+}
+
+PB.init({
+  level:3, music:"music/level3.mp3", name:"HAUNTED CASTLE", next:"level4.html", slides:"level3_slides",
+  letters:[[40,200],[240,70],[415,200],[185,340],[295,340],[60,620],[415,605],[240,690]],
+  bg:["#171226","#100d1c","#090711"],
+  intro:["LEVEL 3: THE GREAT HALL","SMASH THE LIT PILLAR — 2 HITS"],
+  reset(){
+    L.f=0; L.fh=0; L.collapseT=0; L.time=0;
+    L.fCrack=[0,0,0,0]; L.ghosts=[];
+    L.mageCd=0; L.mageStun=0; L.mageHits=0;
+    L.fireT=4; L.fireballs=[];
+    for(const s of SKULLS){ s.score=150; s.skull=false; }
+    for(const p of PILLARS){ p.enabled=true; }
+    MAGE.enabled=true;
+  },
+  tick(dt){
+    L.time += dt;
+    if(L.mageCd>0) L.mageCd-=dt;
+    if(L.mageStun>0) L.mageStun-=dt;
+  },
+  ballStep(b){
+    /* throne portal after the collapse */
+    if(fallen() && L.collapseT>0.7 && Math.hypot(b.x-240,b.y-190)<18){
+      PB.addScore(250000);
+      PB.burst(240,190,PURPLE,40,420);
+      PB.levelComplete();
+      return "remove";
+    }
+  },
+  update(dt){
+    /* mage throws slow fireballs at the ball */
+    if(!fallen()){
+      L.fireT-=dt;
+      if(L.fireT<=0 && L.mageStun<=0 && L.fireballs.length<3){
+        L.fireT=5+Math.random()*2.5;
+        const tgt=PB.balls.find(b=>!b.armed && !b.rail);
+        const a=tgt ? Math.atan2(tgt.y-176, tgt.x-240) : Math.PI/2;
+        L.fireballs.push({x:240,y:178,vx:Math.cos(a)*85,vy:Math.sin(a)*85,life:12});
+        PB.tone(180,.35,"sawtooth",.07,-90);
+      }
+    }
+    for(const fb of L.fireballs){
+      fb.x+=fb.vx*dt; fb.y+=fb.vy*dt; fb.life-=dt;
+      for(const b of PB.balls){
+        if(b.armed||b.rail) continue;
+        if(Math.hypot(b.x-fb.x,b.y-fb.y)<17){
+          const d=Math.hypot(b.x-fb.x,b.y-fb.y)||1;
+          b.vx=(b.x-fb.x)/d*360+fb.vx; b.vy=(b.y-fb.y)/d*360+fb.vy;
+          fb.life=0;
+          PB.burst(fb.x,fb.y,"#ff8a4a",14,260);
+          PB.tone(140,.2,"sawtooth",.08,-60);
+          PB.game.shake=Math.max(PB.game.shake,4);
+        }
+      }
+    }
+    L.fireballs=L.fireballs.filter(fb=>fb.life>0 && fb.y<840 && fb.x>-20 && fb.x<500 && fb.y>-20);
+    if(fallen() && L.collapseT<1){
+      L.collapseT=Math.min(1,L.collapseT+dt*0.5);
+      if(Math.random()<0.4) PB.burst(60+Math.random()*360, 100+Math.random()*200, "#6a5a4a", 4, 220);
+    }
+    if(L.f>=2 && Math.random()<dt*0.5 && L.ghosts.length<4)
+      L.ghosts.push({x:100+Math.random()*280,y:640,ph:Math.random()*7});
+    for(const g of L.ghosts){ g.y-=dt*30; g.x+=Math.sin(g.y/22+g.ph)*0.8; }
+    L.ghosts=L.ghosts.filter(g=>g.y>60);
+  },
+  drawUnder(t){
+    const c=L.collapseT;
+    /* --- great hall interior --- */
+    /* stone tile floor across the whole room */
+    cx.strokeStyle="rgba(140,130,180,0.07)"; cx.lineWidth=1;
+    for(let y=60;y<820;y+=46){
+      cx.beginPath(); cx.moveTo(20,y); cx.lineTo(460,y); cx.stroke();
+    }
+    for(let x=44;x<464;x+=56){
+      cx.beginPath(); cx.moveTo(x,60); cx.lineTo(x,820); cx.stroke();
+    }
+    /* red carpet from the throne down the hall */
+    const cg=cx.createLinearGradient(212,0,268,0);
+    cg.addColorStop(0,"rgba(90,20,30,0.0)"); cg.addColorStop(0.5,"rgba(120,26,40,0.35)"); cg.addColorStop(1,"rgba(90,20,30,0.0)");
+    cx.fillStyle=cg; cx.fillRect(206,150,68,560);
+    cx.fillStyle="rgba(255,210,74,0.12)";
+    cx.fillRect(210,150,3,560); cx.fillRect(267,150,3,560);
+    /* arched windows with moonlight */
+    for(const wx of [70,410]){
+      cx.fillStyle="rgba(200,215,255,0.10)";
+      cx.beginPath(); cx.arc(wx,330,16,Math.PI,0);
+      cx.lineTo(wx+16,384); cx.lineTo(wx-16,384); cx.closePath(); cx.fill();
+      cx.strokeStyle="rgba(200,215,255,0.22)"; cx.lineWidth=2;
+      cx.beginPath(); cx.arc(wx,330,16,Math.PI,0);
+      cx.lineTo(wx+16,384); cx.lineTo(wx-16,384); cx.closePath(); cx.stroke();
+      cx.beginPath(); cx.moveTo(wx,314); cx.lineTo(wx,384); cx.stroke();
+    }
+    /* wall torches */
+    for(const [tx,ty] of [[34,250],[446,250],[34,600],[446,600]]){
+      cx.fillStyle="#3a3448"; cx.fillRect(tx-3,ty,6,18);
+      const fl=6+2*Math.sin(t*11+tx+ty);
+      const fg=cx.createRadialGradient(tx,ty-6,1,tx,ty-6,fl+7);
+      fg.addColorStop(0,"#ffd24a"); fg.addColorStop(0.5,"#ff8a4a"); fg.addColorStop(1,"rgba(255,90,58,0)");
+      cx.fillStyle=fg;
+      cx.beginPath(); cx.arc(tx,ty-6,fl+7,0,7); cx.fill();
+    }
+    /* hanging banners */
+    for(const bx of [150,330]){
+      cx.fillStyle="rgba(90,58,138,0.55)";
+      cx.beginPath();
+      cx.moveTo(bx-14,58); cx.lineTo(bx+14,58); cx.lineTo(bx+14,110);
+      cx.lineTo(bx,96); cx.lineTo(bx-14,110);
+      cx.closePath(); cx.fill();
+      cx.fillStyle="rgba(255,210,74,0.5)";
+      PB.padlockIcon(bx,82,7,false,"rgba(255,210,74,0.5)");
+    }
+    /* the throne (top of the carpet) */
+    if(c<1){
+      cx.save();
+      cx.globalAlpha=1-c*0.8;
+      cx.translate(0,c*30);
+      cx.fillStyle="#332f48";
+      cx.fillRect(205,196,70,10);                    // dais step
+      cx.fillRect(213,188,54,10);
+      const tg=cx.createLinearGradient(0,120,0,190);
+      tg.addColorStop(0,"#5a3a8a"); tg.addColorStop(1,"#332052");
+      cx.fillStyle=tg;
+      PB.roundRect(222,124,36,66,6); cx.fill();      // throne back
+      cx.strokeStyle=GOLD; cx.lineWidth=2;
+      PB.roundRect(222,124,36,66,6); cx.stroke();
+      cx.fillStyle=GOLD;
+      cx.beginPath(); cx.arc(226,122,4,0,7); cx.fill();
+      cx.beginPath(); cx.arc(254,122,4,0,7); cx.fill();
+      cx.fillStyle="#8a84ac"; cx.font="bold 10px Courier New"; cx.textAlign="center";
+      cx.fillText("T H E   G R E A T   H A L L", 240, 108);
+      cx.restore();
+    } else {
+      /* collapsed: rubble where the throne stood */
+      cx.fillStyle="#241f30";
+      cx.beginPath(); cx.moveTo(180,210); cx.quadraticCurveTo(240,150,300,210); cx.closePath(); cx.fill();
+      cx.fillStyle="#332f48";
+      for(let i=0;i<6;i++) cx.fillRect(192+i*18, 196-((i*11)%16), 12, 9);
+    }
+    /* rubble where destroyed pillars stood */
+    for(let i=0;i<4;i++){
+      if(PILLARS[i].enabled!==false) continue;
+      const [px,py]=P_POS[i];
+      cx.fillStyle="#2c2a40";
+      cx.beginPath(); cx.moveTo(px-18,py+12); cx.quadraticCurveTo(px,py-8,px+18,py+12); cx.closePath(); cx.fill();
+      cx.fillStyle="#3a3448";
+      cx.fillRect(px-12,py+2,8,7); cx.fillRect(px+2,py-2,9,8); cx.fillRect(px-3,py+7,7,5);
+    }
+    /* ceiling cracks as foundations fall */
+    if(L.f>0 && c<1){
+      cx.strokeStyle=`rgba(20,16,30,${0.5})`; cx.lineWidth=2;
+      for(let i=0;i<L.f;i++){
+        cx.beginPath();
+        cx.moveTo(120+i*70,44); cx.lineTo(140+i*70,66+(i%2)*10); cx.lineTo(128+i*70,84);
+        cx.stroke();
+      }
+    }
+    /* throne portal */
+    if(fallen() && L.collapseT>0.7){
+      const pg=cx.createRadialGradient(240,190,3,240,190,32);
+      pg.addColorStop(0,"#ffffff"); pg.addColorStop(0.4,PURPLE); pg.addColorStop(1,"rgba(176,125,255,0)");
+      cx.globalAlpha=0.7+0.3*Math.sin(t*8);
+      cx.fillStyle=pg;
+      cx.beginPath(); cx.arc(240,190,32,0,7); cx.fill();
+      cx.globalAlpha=1;
+    }
+    /* ghosts drifting up the hall */
+    for(const g of L.ghosts){
+      cx.globalAlpha=0.35;
+      cx.fillStyle="#cfd4ea";
+      cx.beginPath(); cx.arc(g.x,g.y,8,Math.PI,0);
+      cx.lineTo(g.x+8,g.y+10); cx.lineTo(g.x+4,g.y+7); cx.lineTo(g.x,g.y+11);
+      cx.lineTo(g.x-4,g.y+7); cx.lineTo(g.x-8,g.y+10);
+      cx.closePath(); cx.fill();
+      cx.fillStyle="#1a1826";
+      cx.fillRect(g.x-4,g.y-3,2,3); cx.fillRect(g.x+2,g.y-3,2,3);
+      cx.globalAlpha=1;
+    }
+    /* skull faces on awakened bumpers */
+    for(const s of SKULLS){
+      if(!s.skull) continue;
+      cx.fillStyle="#e8e4f0";
+      cx.beginPath(); cx.arc(s.x,s.y-2,s.r*0.55,0,7); cx.fill();
+      cx.fillRect(s.x-s.r*0.3, s.y+s.r*0.28, s.r*0.6, s.r*0.3);
+      cx.fillStyle="#1a1826";
+      cx.beginPath(); cx.arc(s.x-s.r*0.22,s.y-s.r*0.12,s.r*0.16,0,7); cx.fill();
+      cx.beginPath(); cx.arc(s.x+s.r*0.22,s.y-s.r*0.12,s.r*0.16,0,7); cx.fill();
+    }
+  },
+  drawOver(t){
+    /* fireballs (over everything so they read as a threat) */
+    for(const fb of L.fireballs){
+      const r=8+1.5*Math.sin(t*14+fb.x);
+      const g=cx.createRadialGradient(fb.x,fb.y,1,fb.x,fb.y,r+6);
+      g.addColorStop(0,"#fff0c0"); g.addColorStop(0.4,"#ff8a4a"); g.addColorStop(1,"rgba(255,90,58,0)");
+      cx.fillStyle=g;
+      cx.beginPath(); cx.arc(fb.x,fb.y,r+6,0,7); cx.fill();
+      cx.fillStyle="#ffd24a";
+      cx.beginPath(); cx.arc(fb.x,fb.y,3.5,0,7); cx.fill();
+    }
+  },
+  drawHUD(t){
+    for(let i=0;i<4;i++){
+      cx.fillStyle = i<L.f ? "#2ed579" : (i===L.f ? PURPLE : "#333b52");
+      cx.fillRect(258+i*15, 10, 10, 15);
+    }
+  },
+  wonStats(){
+    return [
+      "Foundations destroyed: "+Math.min(4,L.f)+"/4",
+      "Mage King struck "+L.mageHits+"x",
+      "Castle Grimlock has fallen.",
+      "NEXT STOP: LEVEL 4 — DRAGON'S LAIR",
+    ];
+  },
+});
+</script>
+</body>
+</html>
