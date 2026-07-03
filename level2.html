@@ -43,8 +43,8 @@ function trainOn(){ return trainX()>-200; }
 PB.standardShell();
 
 /* ---------- upper deck ---------- */
-seg(16,410, 196,464);                    // upper floor, pitched to the center gap
-seg(432,410, 284,464);
+seg(16,410, 206,452);                    // upper floor clears ABOVE the pivot caps, feeding the center gap
+seg(432,410, 274,452);
 PB.addFlipper(196,464,-1,30);            // mini flippers over the gap (short: the gap must be droppable)
 PB.addFlipper(284,464, 1,30);
 PB.addBumper(150,120,18);

@@ -25,6 +25,9 @@ global.document = {
   }),
 };
 global.requestAnimationFrame = noop;
+/* signal headless-test mode: the engine skips auto level-up pauses so score-crossing
+   tests aren't interrupted; the dedicated level-up test calls checkLevelUp() directly */
+global.__PB_TEST = true;
 
 /* in-memory localStorage + location */
 const _ls = {};

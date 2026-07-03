@@ -138,10 +138,17 @@ place(30,505,-40,60);
 let rode=false;
 for(let i=0;i<240;i++){ PB.physics(1/60); if(PB.balls[0] && PB.balls[0].rail){rode=true;break;} }
 assert(rode, "left scoop captures ball onto the rail");
-let railMinY=999;
-for(let i=0;i<180;i++){ PB.physics(1/60); if(PB.balls[0]) railMinY=Math.min(railMinY,PB.balls[0].y); }
+let railMinY=999, released=false;
+/* watch the actual ride: it must reach the top AND come off the rail. Stop the
+   instant it's released so a later bumper bounce can't re-capture and flake this. */
+for(let i=0;i<180;i++){
+  PB.physics(1/60);
+  if(!PB.balls[0]) break;
+  railMinY=Math.min(railMinY,PB.balls[0].y);
+  if(railMinY<80 && !PB.balls[0].rail){ released=true; break; }
+}
 assert(railMinY<80, "rail carries ball to the top drop zone");
-assert(PB.balls[0] && !PB.balls[0].rail, "rail releases the ball");
+assert(released, "rail releases the ball");
 
 /* --- wall targets score bonus points --- */
 PB.startLevel(); PB.game.ballSaveT=0;
@@ -170,3 +177,57 @@ assert(PB.flippers[0].pressed===false, "tap auto-releases so it can be tapped ag
 PB.tapFlip(-1);
 assert(PB.flippers[0].pressed===true, "immediate re-tap fires again");
 sim(0.5);
+
+/* --- no bumper can vertical-juggle a ball into a column-lock --- */
+{
+  let locked=null;
+  for(const bp of PB.bumpers){
+    PB.startLevel(); PB.game.balls=99; PB.balls.length=0;
+    const jb=PB.makeBall(bp.x, bp.y-bp.r-11); jb.vy=40; PB.balls.push(jb);
+    let minx=jb.x,maxx=jb.x,esc=false;
+    for(let i=0;i<1440;i++){ PB.physics(1/240); if(!PB.balls.includes(jb)||jb.y>860){esc=true;break;} minx=Math.min(minx,jb.x);maxx=Math.max(maxx,jb.x); }
+    if(!esc && (maxx-minx)<55){ locked=(bp.x|0)+","+(bp.y|0); break; }
+  }
+  assert(locked===null, "no bumper vertical-juggle lock"+(locked?" (at "+locked+")":""));
+}
+
+/* --- level-up: first at 200k, then intervals grow +50% (200k,+300k,+450k...) --- */
+PB.startLevel(); PB.game.balls=99; PB.game.ballSaveT=0;
+PB.game.buffs = {flipper:0,bounce:0,speed:0,plunger:0,light:0,extraball:0,ballsave:0};
+PB.game.nextBuff = 200000; PB.game.buffInterval = 200000; PB.game.score = 0;
+PB.addScore(199000, true); PB.checkLevelUp();
+assert(PB.game.mode==="play", "no level-up before 200k");
+PB.addScore(2000, true); PB.checkLevelUp();
+assert(PB.game.mode==="levelup", "reaching 200k opens the level-up screen");
+assert(PB.game.buffOptions.length===3, "level-up offers exactly 3 buffs");
+const distinct = new Set(PB.game.buffOptions.map(o=>o.key));
+assert(distinct.size===3, "the 3 offered buffs are distinct");
+const chosen = PB.game.buffOptions[1].key;
+PB.chooseBuff(1);
+assert(PB.game.mode==="play", "choosing a buff resumes play");
+assert(PB.game.buffs[chosen]===1, "chosen buff is applied");
+assert(PB.game.nextBuff===500000, "2nd milestone is +300k (at 500k)");
+/* advance through the next two milestones to confirm the growth sequence */
+PB.addScore(500000, true); PB.checkLevelUp(); PB.chooseBuff(0);
+assert(PB.game.nextBuff===950000, "3rd milestone is +450k (at 950k)");
+PB.addScore(450000, true); PB.checkLevelUp(); PB.chooseBuff(0);
+assert(PB.game.nextBuff===950000+675000, "4th milestone is +675k");
+
+/* stronger-flipper buff actually boosts launch speed */
+function peakFlip(){
+  PB.startLevel(); PB.balls.length=0;
+  const b=PB.makeBall(195,795); PB.balls.push(b); const f=PB.flippers[0];
+  f.pressed=false; for(let i=0;i<60;i++) PB.physics(1/240);
+  f.pressed=true; let pk=0; for(let i=0;i<80;i++){ PB.physics(1/240); pk=Math.max(pk,Math.hypot(b.vx,b.vy)); }
+  f.pressed=false; return pk;
+}
+PB.game.buffs.flipper=0; const base=peakFlip();
+PB.game.buffs.flipper=5; const boosted=peakFlip();
+assert(boosted>base, "stronger-flippers buff increases flip power ("+base.toFixed(0)+" -> "+boosted.toFixed(0)+")");
+
+/* buffs are written into the saved run for the next level */
+PB.startLevel(); PB.game.balls=99;
+PB.game.buffs.plunger=3; PB.game.score=250000; PB.game.nextBuff=500000; PB.game.buffInterval=300000;
+PB.levelComplete();
+const sv = JSON.parse(localStorage.getItem("lockboxx.game"));
+assert(sv && sv.buffs && sv.buffs.plunger===3 && sv.nextBuff===500000 && sv.buffInterval===300000, "buffs + milestone state persist in the saved run");

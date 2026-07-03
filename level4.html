@@ -25,6 +25,31 @@ const {V, seg, colors} = PB;
 const {GOLD, CYAN, RED, PURPLE} = colors;
 const cx = PB.ctx;
 
+/* ---------- boss sprites ---------- */
+const SPR = {};
+if(typeof Image!=="undefined"){
+  for(const n of ["body","head","wing_left","wing_right"]){
+    const im = new Image(); im.src = "boss_sprites/"+n+".png"; SPR[n] = im;
+  }
+}
+function spr(img,cx2,cy2,w,rot,alpha){
+  if(!img || !img.complete || !img.naturalWidth) return false;
+  const h = w*img.naturalHeight/img.naturalWidth;
+  cx.save(); cx.globalAlpha = alpha==null?1:alpha;
+  cx.translate(cx2,cy2); if(rot) cx.rotate(rot);
+  cx.drawImage(img, -w/2, -h/2, w, h);
+  cx.restore(); return true;
+}
+/* wing pinned by its shoulder anchor (fx,fy = anchor as fraction of the image) */
+function wing(img,ax,ay,w,fx,fy,rot,alpha){
+  if(!img || !img.complete || !img.naturalWidth) return false;
+  const h = w*img.naturalHeight/img.naturalWidth;
+  cx.save(); cx.globalAlpha = alpha==null?1:alpha;
+  cx.translate(ax,ay); if(rot) cx.rotate(rot);
+  cx.drawImage(img, -fx*w, -fy*h, w, h);
+  cx.restore(); return true;
+}
+
 const L = {
   phase:0,             // 0 wings, 1 mouth, 2 heart(multiball), 3 treasure
   wingHits:[0,0],      // left, right (3 each)
@@ -42,9 +67,11 @@ PB.addTarget( 20,420,  20,460, {score:5000, label:"5K"});
 PB.addTarget(428,420, 428,460, {score:5000, label:"5K"});
 
 /* ---------- dragon ---------- */
-const BODY = PB.addBumper(240,190,42,{col:RED,score:250});
-const HEAD = PB.addBumper(240,248,16,{col:RED,score:250});
-const HEART= PB.addBumper(240,304,14,{col:PURPLE,score:1000,onHit:()=>hitHeart()});
+/* body/head/heart bounce the ball but are drawn by the sprite composite, so
+   their default bumper circles are suppressed with a no-op draw */
+const BODY = PB.addBumper(240,190,42,{col:RED,score:250, draw:()=>{}});
+const HEAD = PB.addBumper(240,248,16,{col:RED,score:250, draw:()=>{}});
+const HEART= PB.addBumper(240,304,14,{col:PURPLE,score:1000,onHit:()=>hitHeart(), draw:()=>{}});
 const MOUTH={x:240,y:270,r:13};
 
 /* wing targets (3 hits each while phase 0) */
@@ -162,57 +189,45 @@ PB.init({
   },
   drawUnder(t){
     const dead=L.phase>=3;
-    const flap=dead?0:Math.sin(t*3)*14;
-    cx.save();
-    if(dead){ cx.globalAlpha=0.5; cx.translate(0,18); }
-    /* wings */
+    const bodyA = dead ? 0.45 : 1;                 // dragon fades on death
+    /* ---- wings (behind the body), flapping / drooping when broken ---- */
+    const flap = dead?0:Math.sin(t*2.4)*0.06;
     for(const i of [0,1]){
-      const sgn=i===0?-1:1;
-      const broken=L.wingHits[i]>=3;
-      const wx=240+sgn*38, tipX=240+sgn*(broken?92:118), tipY=broken?236:150-flap;
-      cx.fillStyle=broken?"#5a2430":"#8a2f3e";
-      cx.beginPath();
-      cx.moveTo(wx,170);
-      cx.quadraticCurveTo(240+sgn*80, 120-flap, tipX, tipY);
-      cx.quadraticCurveTo(240+sgn*95, 200, wx, 215);
-      cx.closePath(); cx.fill();
-      cx.strokeStyle=broken?"#3a1820":"#c04a5a"; cx.lineWidth=2; cx.stroke();
+      const sgn=i===0?-1:1, broken=L.wingHits[i]>=3;
+      const img = i===0?SPR.wing_left:SPR.wing_right;
+      const fx = i===0?0.64:0.37, fy = i===0?0.11:0.09;
+      const ax = i===0?198:282, ay = 150 + (broken?26:0);
+      const rot = sgn*flap + (broken? sgn*0.55 : 0);
+      wing(img, ax, ay, 150, fx, fy, rot, (broken?0.35:1)*bodyA);
       if(!broken && L.phase===0){
-        cx.fillStyle=`rgba(255,210,74,${0.5+0.4*Math.sin(t*6+i)})`;
-        cx.font="bold 10px Courier New"; cx.textAlign="center";
-        cx.fillText(3-L.wingHits[i], 240+sgn*80, 185);
+        cx.fillStyle=`rgba(255,210,74,${0.55+0.4*Math.sin(t*6+i)})`;
+        cx.font="bold 13px Courier New"; cx.textAlign="center";
+        cx.fillText(3-L.wingHits[i], 240+sgn*96, 250);
       }
     }
-    /* neck + horns */
-    cx.fillStyle="#7a2a36";
-    cx.fillRect(228,210,24,36);
-    cx.beginPath(); cx.moveTo(226,240); cx.lineTo(214,222); cx.lineTo(230,232); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(254,240); cx.lineTo(266,222); cx.lineTo(250,232); cx.closePath(); cx.fill();
-    /* eyes */
-    cx.fillStyle=dead?"#3a3448":(L.breathing?"#ffd24a":"#ff5a3a");
-    cx.beginPath(); cx.arc(232,244,3.5,0,7); cx.fill();
-    cx.beginPath(); cx.arc(248,244,3.5,0,7); cx.fill();
-    /* mouth */
+    /* ---- body then head ---- */
+    spr(SPR.body, 240, 182, 152, 0, bodyA);
+    spr(SPR.head, 240, 214, 106, dead?0.15:0, bodyA);
+    /* eyes flare when the dragon is about to breathe fire */
+    if(L.breathing){
+      for(const ex of [225,255]){
+        const g=cx.createRadialGradient(ex,224,1,ex,224,10);
+        g.addColorStop(0,"#fff2b0"); g.addColorStop(1,"rgba(255,180,60,0)");
+        cx.fillStyle=g; cx.beginPath(); cx.arc(ex,224,10,0,7); cx.fill();
+      }
+    }
+    /* ---- mouth glow (phase 1: shoot here) ---- */
     if(L.phase===1){
-      const mg=cx.createRadialGradient(MOUTH.x,MOUTH.y,2,MOUTH.x,MOUTH.y,22);
+      const mg=cx.createRadialGradient(MOUTH.x,MOUTH.y,2,MOUTH.x,MOUTH.y,24);
       mg.addColorStop(0,"#ffd24a"); mg.addColorStop(0.5,"#ff5a3a"); mg.addColorStop(1,"rgba(255,90,58,0)");
-      cx.globalAlpha=0.7+0.3*Math.sin(t*8);
-      cx.fillStyle=mg;
-      cx.beginPath(); cx.arc(MOUTH.x,MOUTH.y,22,0,7); cx.fill();
-      cx.globalAlpha=dead?0.5:1;
-      cx.fillStyle="#2a0a10";
-      cx.beginPath(); cx.arc(MOUTH.x,MOUTH.y,11,0,7); cx.fill();
-      cx.fillStyle="#fff";
-      for(let k=0;k<5;k++){
-        const a=Math.PI*0.15+k*Math.PI*0.17;
-        cx.beginPath();
-        cx.moveTo(MOUTH.x+Math.cos(a)*11, MOUTH.y+Math.sin(a)*11);
-        cx.lineTo(MOUTH.x+Math.cos(a)*11-2, MOUTH.y+Math.sin(a)*11-5);
-        cx.lineTo(MOUTH.x+Math.cos(a)*11+2, MOUTH.y+Math.sin(a)*11-5);
-        cx.closePath(); cx.fill();
-      }
+      cx.save(); cx.globalAlpha=0.7+0.3*Math.sin(t*8);
+      cx.fillStyle=mg; cx.beginPath(); cx.arc(MOUTH.x,MOUTH.y,24,0,7); cx.fill();
+      cx.restore();
+      cx.fillStyle=`rgba(255,210,74,${0.6+0.4*Math.sin(t*6)})`;
+      cx.font="bold 9px Courier New"; cx.textAlign="center";
+      cx.fillText("SHOOT!", MOUTH.x, MOUTH.y+30);
     }
-    /* fire breath */
+    /* ---- fire breath ---- */
     if(L.breathing){
       const fg=cx.createLinearGradient(0,280,0,420);
       fg.addColorStop(0,"rgba(255,210,74,0.5)"); fg.addColorStop(1,"rgba(255,90,58,0)");
@@ -221,9 +236,15 @@ PB.init({
       cx.moveTo(228,280); cx.lineTo(240-76,420); cx.lineTo(240+76,420); cx.lineTo(252,280);
       cx.closePath(); cx.fill();
     }
-    cx.restore();
     /* heart / treasure labels */
     if(L.phase===2){
+      /* exposed weak point: a pulsing heart orb at the HEART collision point */
+      const pr=13+2*Math.sin(t*7);
+      const hg=cx.createRadialGradient(240,304,2,240,304,pr+8);
+      hg.addColorStop(0,"#ffffff"); hg.addColorStop(0.4,PURPLE); hg.addColorStop(1,"rgba(176,125,255,0)");
+      cx.fillStyle=hg; cx.beginPath(); cx.arc(240,304,pr+8,0,7); cx.fill();
+      cx.fillStyle=`rgba(176,125,255,${0.75+0.25*Math.sin(t*7)})`;
+      cx.beginPath(); cx.arc(240,304,pr,0,7); cx.fill();
       cx.fillStyle=`rgba(176,125,255,${0.5+0.4*Math.sin(t*7)})`;
       cx.font="bold 9px Courier New"; cx.textAlign="center";
       cx.fillText("WEAK POINT", 240, 336);
@@ -252,16 +273,13 @@ PB.init({
     L.doneT+=0;
     const dt2=L.doneT;
     cx.textAlign="center";
-    /* falling dragon silhouette */
-    cx.save();
-    cx.translate(240, 200+Math.min(1,dt2/4)*80);
-    cx.rotate(Math.min(1,dt2/4)*0.5);
-    cx.globalAlpha=Math.max(0,0.8-dt2*0.12);
-    cx.fillStyle="#5a2430";
-    cx.beginPath(); cx.arc(0,0,40,0,7); cx.fill();
-    cx.beginPath(); cx.moveTo(-30,-10); cx.lineTo(-90,-40); cx.lineTo(-40,20); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(30,-10); cx.lineTo(90,-40); cx.lineTo(40,20); cx.closePath(); cx.fill();
-    cx.restore();
+    /* falling dragon: the body sprite tumbles down and fades out */
+    const fall=Math.min(1,dt2/4);
+    const cy=180+fall*120, rot=fall*0.6, al=Math.max(0,0.85-dt2*0.14);
+    if(!spr(SPR.body, 240, cy, 150, rot, al)){
+      cx.save(); cx.globalAlpha=al; cx.translate(240,cy); cx.rotate(rot);
+      cx.fillStyle="#5a2430"; cx.beginPath(); cx.arc(0,0,40,0,7); cx.fill(); cx.restore();
+    }
     cx.globalAlpha=1;
     cx.fillStyle=GOLD; cx.font="bold 30px Courier New";
     cx.fillText("THE DRAGON HAS FALLEN", 240, 340);

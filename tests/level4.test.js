@@ -60,3 +60,16 @@ PB.startLevel(); PB.game.balls=99; PB.game.ballSaveT=0;
   assert(PB.letters.every(l=>l.got), "all 8 LOCKBOXX letters collected");
   assert(PB.game.score>=s0+140000, "LOCKBOXX completion bonus awarded");
 }
+
+/* --- no bumper can vertical-juggle a ball into a column-lock --- */
+{
+  let locked=null;
+  for(const bp of PB.bumpers){
+    PB.startLevel(); PB.game.balls=99; PB.balls.length=0;
+    const jb=PB.makeBall(bp.x, bp.y-bp.r-11); jb.vy=40; PB.balls.push(jb);
+    let minx=jb.x,maxx=jb.x,esc=false;
+    for(let i=0;i<1440;i++){ PB.physics(1/240); if(!PB.balls.includes(jb)||jb.y>860){esc=true;break;} minx=Math.min(minx,jb.x);maxx=Math.max(maxx,jb.x); }
+    if(!esc && (maxx-minx)<55){ locked=(bp.x|0)+","+(bp.y|0); break; }
+  }
+  assert(locked===null, "no bumper vertical-juggle lock"+(locked?" (at "+locked+")":""));
+}

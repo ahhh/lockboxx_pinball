@@ -113,12 +113,38 @@ function nav(url){ try{ location.href = url; }catch(e){} }
    STATE
    ============================================================ */
 let cfg = {};
+/* ---- level-up buffs: persist across levels within a run, reset on new game ---- */
+const BUFF_DEFS = [
+  {key:"flipper",  name:"STRONGER FLIPPERS", desc:"+0.1 flipper power"},
+  {key:"bounce",   name:"BOUNCIER BALL",     desc:"+0.1 bounciness"},
+  {key:"speed",    name:"FASTER BALL",       desc:"+0.1 ball speed"},
+  {key:"plunger",  name:"STRONGER PLUNGER",  desc:"+0.2 launch power"},
+  {key:"light",    name:"LIGHTER BALL",      desc:"floats longer, snappier"},
+  {key:"extraball",name:"EXTRA BALL CHANCE", desc:"+20% save on last ball"},
+  {key:"ballsave", name:"LONGER BALL SAVE",  desc:"+0.2s ball save"},
+];
+function defaultBuffs(){ const o={}; for(const d of BUFF_DEFS) o[d.key]=0; return o; }
+const BUFF_CARD_Y = 275, BUFF_CARD_H = 96;   // level-up card layout (shared by render + tap hit-test)
 const game = {
   mode:"play", score:0, balls:3, ballNum:1, mult:1,
   ballSaveT:0, shake:0,
+  buffs:defaultBuffs(), nextBuff:200000, buffInterval:200000, buffOptions:[],
 };
-let entry = {score:0, balls:3};    // snapshot on page load (for R restart)
+const BUFF_BASE = 200000, BUFF_GROWTH = 1.5;   // first level-up at 200k, interval +50% each time
+/* effective, buff-adjusted parameters read live from game.buffs */
+const B = {
+  flipE:  ()=> 0.85 + 0.10*game.buffs.flipper,
+  bounce: ()=> Math.min(0.40, 0.08*game.buffs.bounce),
+  speedFric: ()=> 0.06/(1 + 0.15*game.buffs.speed),
+  speedMax:  ()=> 1700 + 110*game.buffs.speed,
+  plungeMul: ()=> 1 + 0.15*game.buffs.plunger,
+  grav:   ()=> GRAV*(1 - Math.min(0.45, 0.06*game.buffs.light)),
+  saveChance: ()=> Math.min(0.85, 0.20*game.buffs.extraball),
+  saveDur: ()=> 8 + 0.2*game.buffs.ballsave,
+};
+let entry = {score:0, balls:3, buffs:defaultBuffs(), nextBuff:200000, buffInterval:200000};
 const balls = [];                  // live play balls
+let bumpSeq = 0;                    // deterministic per-hit counter for bumper kick jitter
 const plunger = {charge:0, charging:false};
 const PLUNGE_X = 448;
 
@@ -205,14 +231,20 @@ function addRail(opt){
    main flippers, optional green slings */
 function standardShell(opt={}){
   seg(16,214, 16,634);                    // left wall
-  /* Funnels end INSIDE the flipper pivot, just above the blade, so a ball is
-     always delivered onto the flipper top and rolls down to the center drain.
-     There is no wall or ledge outside the pivot, so nothing can pin a ball
-     against the pivot cap (the old wedge). */
-  seg(16,634, 180,752);                   // left funnel -> onto the blade
+  /* Funnel drops to a junction, then an inlane LIP delivers the ball onto the
+     flipper blade (inside the pivot) while an OUTLANE wall continues straight
+     down. The outlane sits well clear of the pivot cap, so a ball is either
+     fed to the flipper or drained down the outlane — it can never wedge on top
+     of the cap (the old bug) and can't leak out the bottom corner. */
+  seg(16,634, 128,720);                   // left funnel
+  seg(128,720, 162,772);                  // left inlane lip -> all the way to the pivot (caps the channel; no gap to shoot up)
+  seg(128,720, 128,862);                  // left outlane wall
   seg(432,240, 432,634);                  // plunger lane inner wall
-  seg(432,634, 300,752);                  // right funnel -> onto the blade
-  seg(464,214, 464,802);                  // right outer wall
+  seg(432,634, 352,720);                  // right funnel
+  seg(352,720, 318,772);                  // right inlane lip -> all the way to the pivot (caps the channel; no gap to shoot up)
+  seg(352,720, 352,862);                  // right outlane wall
+  seg(464,214, 464,862);                  // right outer wall — extends past the plunger floor so a
+                                          // fast ball can't slip out the bottom-right corner (off-stage)
   seg(430,802, 466,802, {e:0.3});         // plunger lane floor
   seg(430,244, 462,206, {oneway:norm(V(-36,-32)), e:0.2, hidden:true}); // lane one-way gate
   /* top dome */
@@ -255,7 +287,7 @@ function collideSeg(b, s){
   b.x = cp.x + n.x*b.r; b.y = cp.y + n.y*b.r;
   const vn = b.vx*n.x + b.vy*n.y;
   if(vn < 0){
-    const e = s.e ?? 0.45;
+    const e = (s.e ?? 0.45) + (s.oneway||s.kick!==undefined ? 0 : B.bounce());
     b.vx -= (1+e)*vn*n.x; b.vy -= (1+e)*vn*n.y;
     const tvx = b.vx - (b.vx*n.x+b.vy*n.y)*n.x, tvy = b.vy - (b.vx*n.x+b.vy*n.y)*n.y;
     b.vx -= tvx*0.015; b.vy -= tvy*0.015;
@@ -283,7 +315,15 @@ function collideBumper(b, bp){
   const nx=dx/d, ny=dy/d;
   b.x = bp.x+nx*rr; b.y = bp.y+ny*rr;
   const sp = Math.max(360, Math.hypot(b.vx,b.vy)*0.5+260);
-  b.vx = nx*sp; b.vy = ny*sp;
+  /* kick along a slightly varied angle so a dead-centre hit can't juggle
+     straight up and down on the bumper forever (that looked like a stuck ball).
+     Deterministic per-hit (not Math.random) so it stays reproducible for tests,
+     while still differing on consecutive hits — which is what breaks a juggle. */
+  bumpSeq = (bumpSeq+1) % 100000;
+  const jit = Math.sin(bumpSeq*12.9898)*0.25;   // ~±14 degrees, cycles per hit
+  const cs=Math.cos(jit), sn=Math.sin(jit);
+  b.vx = (nx*cs - ny*sn)*sp;
+  b.vy = (nx*sn + ny*cs)*sp;
   bp.flash = 0.18;
   addScore(bp.score);
   sfx.bumper();
@@ -307,7 +347,7 @@ function collideFlipper(b, f){
   const rel = V(b.vx-sv.x, b.vy-sv.y);
   const vn = dot(rel,n);
   if(vn<0){
-    const e = Math.abs(f.av)>2 ? 0.55 : 0.25;
+    const e = Math.abs(f.av)>2 ? B.flipE() : 0.25;   // active flip (buff-boosted)
     b.vx -= (1+e)*vn*n.x; b.vy -= (1+e)*vn*n.y;
   }
 }
@@ -329,10 +369,11 @@ function collideBalls(a,b,onHit){
   }
 }
 function stepBall(b, dt){
-  b.vy += GRAV*dt;
-  const v = Math.hypot(b.vx,b.vy);
-  if(v>MAXV){ b.vx*=MAXV/v; b.vy*=MAXV/v; }
-  b.vx *= (1-0.06*dt); b.vy *= (1-0.06*dt);
+  b.vy += B.grav()*dt;
+  const v = Math.hypot(b.vx,b.vy), mv = B.speedMax();
+  if(v>mv){ b.vx*=mv/v; b.vy*=mv/v; }
+  const fr = B.speedFric();
+  b.vx *= (1-fr*dt); b.vy *= (1-fr*dt);
   b.x += b.vx*dt; b.y += b.vy*dt;
   for(const s of SEGS) collideSeg(b,s);
   for(const bp of BUMPERS) collideBumper(b,bp);
@@ -360,9 +401,9 @@ function launch(){
   const b = armedBall();
   if(!b) return;
   const p = 0.35 + 0.65*plunger.charge;
-  b.vy = -(760 + 900*p); b.vx = 0;
+  b.vy = -(760 + 900*p) * B.plungeMul(); b.vx = 0;
   b.armed = false; plunger.charge = 0;
-  game.ballSaveT = 8;
+  game.ballSaveT = B.saveDur();
   sfx.launch();
 }
 function drained(b){
@@ -378,6 +419,12 @@ function drained(b){
     serve(); game.ballSaveT = 0;
     return;
   }
+  if(B.saveChance()>0 && Math.random() < B.saveChance()){
+    sfx.chain();
+    showMsg("EXTRA BALL!","LUCKY SAVE",2);
+    serve();
+    return;
+  }
   sfx.drain();
   game.balls--;
   if(game.balls<=0){
@@ -389,6 +436,33 @@ function drained(b){
   }
 }
 
+/* ---------- level-up buffs ---------- */
+function checkLevelUp(){
+  if(game.mode!=="play" || game.score < game.nextBuff) return;
+  /* offer 3 distinct random buffs to choose from */
+  const pool = BUFF_DEFS.slice();
+  const opts = [];
+  for(let i=0;i<3 && pool.length;i++) opts.push(pool.splice(Math.floor(Math.random()*pool.length),1)[0]);
+  game.buffOptions = opts;
+  game.mode = "levelup";
+  sfx.fanfare();
+  game.shake = 8;
+}
+function chooseBuff(i){
+  if(game.mode!=="levelup") return;
+  const d = game.buffOptions[i];
+  if(!d) return;
+  game.buffs[d.key]++;
+  game.buffInterval = Math.round(game.buffInterval * BUFF_GROWTH);
+  game.nextBuff += game.buffInterval;
+  game.buffOptions = [];
+  game.mode = "play";
+  showMsg("LEVEL UP!", d.name+"  ("+d.desc+")", 2.4);
+  sfx.unlock();
+  burst(240, 300, GOLD, 30, 360);
+  checkLevelUp();   // handle a second milestone crossed in the same jump
+}
+
 /* ---------- game flow ---------- */
 function startLevel(){
   game.mode="play";
@@ -397,6 +471,8 @@ function startLevel(){
   game.score = entry.score; game.balls = entry.balls;
   game.ballNum = 1; game.mult = 1;
   game.ballSaveT = 0; game.shake = 0;
+  game.buffs = {...entry.buffs}; game.nextBuff = entry.nextBuff; game.buffInterval = entry.buffInterval;
+  game.buffOptions = [];
   balls.length = 0;
   particles.length=0; msgs.length=0;
   if(cfg.reset) cfg.reset();
@@ -408,7 +484,7 @@ function levelComplete(){
   store.bumpHi(game.score);
   if(cfg.next){
     game.mode = "won";
-    store.saveGame({score:game.score, balls:game.balls, level:(cfg.level||1)+1});
+    store.saveGame({score:game.score, balls:game.balls, level:(cfg.level||1)+1, buffs:game.buffs, nextBuff:game.nextBuff, buffInterval:game.buffInterval});
   } else {
     game.mode = "done";
     store.wipe();
@@ -462,6 +538,12 @@ window.addEventListener("keydown", e=>{
   audio(); startMusic();
   const k = e.code;
   if(k==="KeyS"){ toggleMusic(); return; }
+  if(game.mode==="levelup"){
+    if(k==="Digit1"||k==="Numpad1") chooseBuff(0);
+    else if(k==="Digit2"||k==="Numpad2") chooseBuff(1);
+    else if(k==="Digit3"||k==="Numpad3") chooseBuff(2);
+    e.preventDefault(); return;
+  }
   if(k==="ArrowLeft"||k==="KeyZ"||k==="KeyA"){ press(-1,true); e.preventDefault(); }
   if(k==="ArrowRight"||k==="KeyM"||k==="KeyL"){ press(1,true); e.preventDefault(); }
   if(k==="Space"||k==="ArrowDown"){
@@ -493,10 +575,15 @@ function tapFlip(side){
 const touches = {};
 cv.addEventListener("pointerdown", e=>{
   audio(); startMusic(); e.preventDefault();
-  if(game.mode!=="play"){ advanceScreen(); return; }
   const rect = cv.getBoundingClientRect();
   const sc = TW / (rect.width || TW);
   const x = (e.clientX-rect.left)*sc, y = (e.clientY-rect.top)*sc;
+  if(game.mode==="levelup"){
+    const i = Math.floor((y - BUFF_CARD_Y)/BUFF_CARD_H);   // which stacked card
+    if(i>=0 && i<3) chooseBuff(i);
+    return;
+  }
+  if(game.mode!=="play"){ advanceScreen(); return; }
   for(const b of BTNS){
     if(Math.hypot(x-b.x, y-b.y) <= b.r+10){ tapFlip(b.side); return; }
   }
@@ -585,11 +672,25 @@ function physics(dt){
         else if(balls.length>1){ b.vy=-1600; sfx.launch(); }
       }
       if(b.y > TH+30){ drained(b); continue; }
-      /* stuck-ball failsafe */
-      if(Math.hypot(b.vx,b.vy)<6){
-        b.stillT += STEP;
-        if(b.stillT>2.5){ b.vx += (Math.random()-0.5)*120; b.vy -= 90; b.stillT=0; }
-      } else b.stillT = 0;
+      /* stuck-ball failsafe — position based, so it also frees a ball that
+         micro-juggles in a pocket (never slow enough for a velocity test).
+         Skipped while a flipper is held so trapping the ball still works. */
+      /* trapping the ball on a held flipper is legit, so give a longer grace
+         period when the ball sits on a pressed flipper — but always rescue
+         eventually so nothing can soft-lock. */
+      const held = FLIPPERS.some(f=>{
+        if(!f.pressed) return false;
+        const tip=f.tip();
+        return Math.hypot(b.x-(f.px+tip.x)/2, b.y-(f.py+tip.y)/2) < 55;
+      });
+      if(b.homeX!==undefined && Math.hypot(b.x-b.homeX, b.y-b.homeY) < 34){
+        b.homeT += STEP;
+        if(b.homeT > (held ? 4 : 2.5)){
+          b.vx += (Math.random()-0.5)*200;   // dislodge toward the playfield/drain
+          b.vy = 260 + Math.random()*120;
+          b.homeT = 0; b.homeX = undefined;
+        }
+      } else { b.homeX = b.x; b.homeY = b.y; b.homeT = 0; }
     }
     /* ball-ball collisions (all pairs) */
     for(let i=0;i<balls.length;i++)
@@ -597,6 +698,9 @@ function physics(dt){
         if(!balls[i].armed && !balls[j].armed && !balls[i].rail && !balls[j].rail)
           collideBalls(balls[i], balls[j]);
   }
+  /* every 100k points -> pause for a level-up buff choice
+     (auto-triggered in the browser; headless tests drive checkLevelUp directly) */
+  if(!(typeof globalThis!=="undefined" && globalThis.__PB_TEST)) checkLevelUp();
   /* frame-rate animations */
   if(cfg.update) cfg.update(dt);
   if(game.ballSaveT>0) game.ballSaveT -= dt;
@@ -888,6 +992,34 @@ function drawOverlay(t){
     }
     return;
   }
+  if(game.mode==="levelup"){
+    cx.fillStyle="rgba(5,6,10,0.9)"; cx.fillRect(0,0,TW,TH);
+    cx.textAlign="center";
+    cx.fillStyle=GOLD; cx.font="bold 34px Courier New";
+    cx.fillText("LEVEL UP!", 240, 210);
+    cx.fillStyle=CYAN; cx.font="bold 14px Courier New";
+    cx.fillText("CHOOSE A BUFF", 240, 245);
+    for(let i=0;i<game.buffOptions.length;i++){
+      const d=game.buffOptions[i];
+      const cardY=BUFF_CARD_Y+i*BUFF_CARD_H, h=BUFF_CARD_H-14;
+      const pulse=0.5+0.5*Math.sin(t*4+i);
+      cx.fillStyle="rgba(20,26,40,0.95)";
+      roundRect(60, cardY, 360, h, 10); cx.fill();
+      cx.strokeStyle=`rgba(255,210,74,${0.55+0.35*pulse})`; cx.lineWidth=2;
+      roundRect(60, cardY, 360, h, 10); cx.stroke();
+      cx.textAlign="left";
+      cx.fillStyle=GOLD; cx.font="bold 16px Courier New";
+      cx.fillText((i+1)+".  "+d.name, 84, cardY+34);
+      cx.fillStyle="#9aa4c0"; cx.font="13px Courier New";
+      cx.fillText(d.desc, 108, cardY+58);
+      const owned=game.buffs[d.key];
+      if(owned>0){ cx.fillStyle="#7dffa0"; cx.font="bold 11px Courier New"; cx.textAlign="right"; cx.fillText("LV "+owned, 404, cardY+34); }
+      cx.textAlign="center";
+    }
+    cx.fillStyle="rgba(154,164,192,0.6)"; cx.font="11px Courier New";
+    cx.fillText("PRESS 1 / 2 / 3  OR TAP A CARD", 240, BUFF_CARD_Y+3*BUFF_CARD_H+16);
+    return;
+  }
   cx.fillStyle="rgba(5,6,10,0.8)";
   cx.fillRect(0,0,TW,TH);
   cx.textAlign="center";
@@ -952,6 +1084,9 @@ function init(c){
   const saved = store.loadGame();
   entry.score = saved ? (saved.score||0) : 0;
   entry.balls = saved ? (saved.balls??3) : 3;
+  entry.buffs = {...defaultBuffs(), ...(saved && saved.buffs || {})};
+  entry.nextBuff = saved && saved.nextBuff || BUFF_BASE;
+  entry.buffInterval = saved && saved.buffInterval || BUFF_BASE;
   startLevel();
   requestAnimationFrame(frame);
 }
@@ -968,6 +1103,7 @@ return {
   addScore, showMsg, burst,
   serve, launch, addBall, removeBall, armedBall,
   startLevel, levelComplete, gameOver, advanceScreen, tapFlip,
+  checkLevelUp, chooseBuff, buffDefs:BUFF_DEFS,
   physics, init, store, ctx:cx,
 };
 })();
