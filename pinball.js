@@ -205,13 +205,13 @@ function addRail(opt){
    main flippers, optional green slings */
 function standardShell(opt={}){
   seg(16,214, 16,634);                    // left wall
-  seg(16,634, 154,764);                   // left funnel
-  seg(154,764, 163,777, {e:0.3});         // filler: closes the notch between funnel and flipper base
-  seg(154,764, 152,838);                  // behind left flipper
+  /* Funnels end INSIDE the flipper pivot, just above the blade, so a ball is
+     always delivered onto the flipper top and rolls down to the center drain.
+     There is no wall or ledge outside the pivot, so nothing can pin a ball
+     against the pivot cap (the old wedge). */
+  seg(16,634, 180,752);                   // left funnel -> onto the blade
   seg(432,240, 432,634);                  // plunger lane inner wall
-  seg(432,634, 326,764);                  // right funnel
-  seg(326,764, 317,777, {e:0.3});         // filler (right)
-  seg(326,764, 328,838);                  // behind right flipper
+  seg(432,634, 300,752);                  // right funnel -> onto the blade
   seg(464,214, 464,802);                  // right outer wall
   seg(430,802, 466,802, {e:0.3});         // plunger lane floor
   seg(430,244, 462,206, {oneway:norm(V(-36,-32)), e:0.2, hidden:true}); // lane one-way gate
