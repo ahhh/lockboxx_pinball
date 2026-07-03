@@ -486,8 +486,10 @@ function levelComplete(){
     game.mode = "won";
     store.saveGame({score:game.score, balls:game.balls, level:(cfg.level||1)+1, buffs:game.buffs, nextBuff:game.nextBuff, buffInterval:game.buffInterval});
   } else {
-    game.mode = "done";
     store.wipe();
+    /* final level: play the victory slides first, then fall through to the finale */
+    if(cfg.slides) startCutscene();
+    else game.mode = "done";
   }
   sfx.win();
   game.shake = 12;
@@ -520,6 +522,12 @@ function startCutscene(){
   game.mode = "cutscene";
   sfx.unlock();
 }
+/* end of the slide deck: go to the next level, or (final level) the finale screen */
+function endCutscene(){
+  slides = null;
+  if(cfg.next) nav(cfg.next);
+  else game.mode = "done";
+}
 function advanceScreen(){
   if(game.mode==="won" && cfg.next){
     if(cfg.slides) startCutscene();
@@ -527,7 +535,7 @@ function advanceScreen(){
   }
   else if(game.mode==="cutscene"){
     slides.idx++; slides.t=0;
-    if(slides.idx>=3) nav(cfg.next);
+    if(slides.idx>=3) endCutscene();
     else sfx.target();
   }
   else if(game.mode==="done") nav("index.html");
@@ -715,12 +723,12 @@ function physics(dt){
       if(btnT[s]<=0) press(s,false);
     }
   }
-  /* cutscene slides auto-advance: 1 second per slide */
+  /* cutscene slides auto-advance: 2 seconds per slide */
   if(game.mode==="cutscene" && slides){
     slides.t += dt;
-    if(slides.t >= 1){
+    if(slides.t >= 2){
       slides.idx++; slides.t = 0;
-      if(slides.idx>=3) nav(cfg.next);
+      if(slides.idx>=3) endCutscene();
       else sfx.target();
     }
   }

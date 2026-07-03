@@ -97,7 +97,7 @@ assert(saved && saved.level===2 && saved.score===PB.game.score, "run saved to st
 assert(PB.store.hi()>=PB.game.score, "high score recorded");
 PB.advanceScreen();
 assert(PB.game.mode==="cutscene", "status page advances into the cutscene slides");
-for(let i=0;i<Math.round(60*3.5);i++) PB.physics(1/60);   // slides auto-advance, 1s each
+for(let i=0;i<Math.round(60*6.5);i++) PB.physics(1/60);   // slides auto-advance, 2s each
 assert(location.href==="level2.html", "after 3 slides the game jumps to level 2");
 
 /* --- drain costs a ball, next ball served --- */

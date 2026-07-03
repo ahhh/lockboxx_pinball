@@ -45,7 +45,7 @@ const saved = JSON.parse(localStorage.getItem("lockboxx.game"));
 assert(saved && saved.level===3, "run saved to storage for level 3");
 PB.advanceScreen();
 assert(PB.game.mode==="cutscene", "status page advances into the cutscene slides");
-for(let i=0;i<Math.round(60*3.5);i++) PB.physics(1/60);   // slides auto-advance, 1s each
+for(let i=0;i<Math.round(60*6.5);i++) PB.physics(1/60);   // slides auto-advance, 2s each
 assert(location.href==="level3.html", "after 3 slides the game jumps to level 3");
 
 /* --- golden tube is locked before all stations --- */

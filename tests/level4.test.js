@@ -44,11 +44,16 @@ assert(L.heartHits>=3, "heart takes 3 hits (got "+L.heartHits+")");
 assert(L.phase===3, "dragon defeated");
 assert(PB.game.mode==="play", "short defeat cinematic before the win screen");
 
-/* --- defeat cinematic ends on the finale win screen --- */
+/* --- defeat cinematic -> victory slides -> finale/high-score screen --- */
 for(const b of PB.balls){ b.x=100; b.y=700; b.vx=0; b.vy=0; }   // park the multiball
-let done=false;
-for(let i=0;i<240;i++){ PB.physics(1/60); if(PB.game.mode==="done"){done=true;break;} }
-assert(done, "dragon defeat leads to the win screen");
+let sawSlides=false, done=false;
+for(let i=0;i<60*12;i++){                        // defeat cinematic + 3 slides x 2s + margin
+  PB.physics(1/60);
+  if(PB.game.mode==="cutscene") sawSlides=true;
+  if(PB.game.mode==="done"){ done=true; break; }
+}
+assert(sawSlides, "victory slides play after the final win");
+assert(done, "then the finale/high-score screen shows");
 assert(localStorage.getItem("lockboxx.game")===null, "completed run wiped from storage");
 assert(PB.store.hi()>=PB.game.score, "final score recorded as high score");
 
