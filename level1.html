@@ -54,19 +54,24 @@ seg(340,252, 340,340, {e:0.35, nodraw:true});
 seg(140,340, 152,340, {nodraw:true}); seg(188,340, 222,340, {nodraw:true});
 seg(258,340, 292,340, {nodraw:true}); seg(328,340, 340,340, {nodraw:true});
 const doors=[];
-function makeSlot(xl,xr,topY,idx,removable){
+function makeSlot(xl,xr,topY,idx){
   seg(xl,340, xl,topY, {nodraw:true});
   seg(xr,340, xr,topY, {nodraw:true});
   const d = seg(xl,topY+2, xr,topY+2, {e:0.25, nodraw:true,
-    enabled: removable ? ()=>L.finalOpenT<=0.5 : undefined,
+    enabled: ()=>L.finalOpenT<=0.5,   // every door slides away once the bridge is complete
     onHit:(s,b)=>hitDoor(idx,b.x,b.y)});
   doors.push(d);
 }
 makeSlot(152,188,272,0);
-makeSlot(222,258,276,1,true);
+makeSlot(222,258,276,1);
 makeSlot(292,328,272,2);
 seg(222,252, 258,252, {nodraw:true});
-const PORTAL={x:240,y:264};
+/* all three tunnels become escape portals once the bridge is built */
+const PORTALS=[
+  {x:170,y:264,xl:152,xr:188,ty:272},
+  {x:240,y:264,xl:222,xr:258,ty:276},
+  {x:310,y:264,xl:292,xr:328,ty:272},
+];
 
 /* sliding security gates over the slot mouths */
 const gates=[
@@ -135,7 +140,7 @@ function hitDoor(i,bx,by){
   else {
     L.bridgeDone=true; L.portalActive=true;
     PB.addScore(50000);
-    PB.showMsg("BRIDGE COMPLETE!","SHOOT THE GLOWING VAULT CORE!",3.2);
+    PB.showMsg("BRIDGE COMPLETE!","SHOOT ANY GLOWING TUNNEL TO ESCAPE!",3.2);
     PB.sfx.jackpot();
   }
 }
@@ -184,12 +189,15 @@ PB.init({
   },
   ballStep(b){
     if(!L.captiveGone) PB.collideBalls(b, captive, hitPadlock);
-    if(L.portalActive && L.finalOpenT>0.5 &&
-       b.x>222 && b.x<258 && b.y<276 && b.y>248){
-      PB.addScore(250000);
-      PB.burst(PORTAL.x,PORTAL.y+40,CYAN,40,420);
-      PB.levelComplete();
-      return "remove";
+    if(L.portalActive && L.finalOpenT>0.5){
+      for(const p of PORTALS){
+        if(b.x>p.xl && b.x<p.xr && b.y<p.ty && b.y>246){
+          PB.addScore(250000);
+          PB.burst(p.x,p.y+40,CYAN,40,420);
+          PB.levelComplete();
+          return "remove";
+        }
+      }
     }
   },
   update(dt){
@@ -247,19 +255,18 @@ PB.init({
     for(let i=0;i<3;i++){
       const [xl,xr,ty]=slotDef[i];
       cx.fillStyle="#0a0d16"; cx.fillRect(xl,ty,xr-xl,340-ty);
-      if(i===1){
-        cx.fillStyle="#05060a"; cx.fillRect(222,252,36,24);
-        if(L.portalActive){
-          const pg=cx.createRadialGradient(240,264,2,240,264,26);
-          pg.addColorStop(0,"#ffffff"); pg.addColorStop(0.4,CYAN); pg.addColorStop(1,"rgba(125,232,255,0)");
-          cx.fillStyle=pg;
-          cx.globalAlpha=0.7+0.3*Math.sin(t*8);
-          cx.beginPath(); cx.arc(240,264,26,0,7); cx.fill();
-          cx.globalAlpha=1;
-        }
+      const midx=(xl+xr)/2;
+      if(i===1){ cx.fillStyle="#05060a"; cx.fillRect(222,252,36,24); }
+      if(L.portalActive){
+        cx.fillStyle="#05060a"; cx.fillRect(xl,252,xr-xl,ty-250);
+        const pg=cx.createRadialGradient(midx,264,2,midx,264,24);
+        pg.addColorStop(0,"#ffffff"); pg.addColorStop(0.4,CYAN); pg.addColorStop(1,"rgba(125,232,255,0)");
+        cx.fillStyle=pg;
+        cx.globalAlpha=0.7+0.3*Math.sin(t*8);
+        cx.beginPath(); cx.arc(midx,264,24,0,7); cx.fill();
+        cx.globalAlpha=1;
       }
-      const isCenter=i===1;
-      const doorSlid=isCenter?L.finalOpenT:0;
+      const doorSlid=L.finalOpenT;   // all three doors slide open when the bridge is done
       if(doorSlid<1){
         const dw=(xr-xl)*(1-doorSlid);
         const hd=L.doorsHit[i];
